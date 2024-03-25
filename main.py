@@ -20,38 +20,47 @@ current_image = 0
 max_width = 1280
 max_height = 720
 
+def edge(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edged = cv2.Canny(gray, 80, 120)
+    # dot_removed = cv2.morphologyEx(edged, cv2.MORPH_OPEN, None)
+    dilated = cv2.dilate(edged, np.ones((3, 3), np.uint8), iterations=1)
+    return dilated
+
+def segment_color(img, cluster_n, epochs, accuracy):
+    data = np.float32(img)
+    data = data.reshape((-1, 3))
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, epochs, accuracy)
+    _, labels, centers = cv2.kmeans(data, cluster_n, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+    centers = np.uint8(centers)
+    result = centers[labels.flatten()]
+    result = result.reshape(img.shape)
+
+    return result
+
 while True:
     # 이미지 불러오기
-    img = cv2.imread(os.path.join(image_dir, image_files[current_image]))
+    original_img = cv2.imread(os.path.join(image_dir, image_files[current_image]))
 
-    # 그레이스케일 변환
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    # 가우시안 블러 적용
-    gray = cv2.GaussianBlur(gray, (0, 0), 2)
-
-    # 적응형 이진화 적용
-    edges = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 9, 9)
-
-    # 컬러 이미지에 윤곽선 적용
-    color = cv2.bitwise_and(img, img, mask=cv2.bitwise_not(edges))
-    # color = cv2.bilateralFilter(color, -1, 20.0, 7.0)
-
-    # 윤곽선에 컬러 적용
-    edges_color = cv2.bitwise_and(img, img, mask=edges)
-
-    # 최종 합성
-    cartoon = cv2.bitwise_or(color, edges_color)
+    gaussian_blurred_img = cv2.GaussianBlur(original_img, (5, 5), 1.4)
+    edge_img = cv2.bitwise_not(edge(gaussian_blurred_img))
+    edge_img = cv2.cvtColor(edge_img, cv2.COLOR_GRAY2RGB)
+    segmented_img = segment_color(original_img, 8, 5, 0.03)
+    blurred_img = cv2.bilateralFilter(segmented_img, 8, 200, 200)
+    
+    # cartoon = cv2.bitwise_and(blurred_img, blurred_img, mask=edge_img)
+    cartoon = cv2.bitwise_and(blurred_img, edge_img)
 
     # 이미지 크기 조정
     height, width = cartoon.shape[:2]
     if width > max_width or height > max_height:
         scale = min(max_width / width, max_height / height)
         cartoon = cv2.resize(cartoon, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        original_img = cv2.resize(original_img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        edge_img = cv2.resize(edge_img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
 
     # 이미지 보여주기
-    cv2.imshow('Cartoon Image', np.hstack((img, cartoon)))
+    cv2.imshow('Cartoon Image', np.hstack((original_img, cartoon, edge_img)))
 
     # 키보드 입력 처리
     key = cv2.waitKey(0)
